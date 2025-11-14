@@ -1,42 +1,11 @@
-import streamlit as st
-import pandas as pd
-import gspread
-from google.oauth2.service_account import Credentials
-from datetime import datetime
-import json
-
-# Configuração da página
-st.set_page_config(
-    page_title="Sistema de Compras e Estoque",
-    page_icon="📦",
-    layout="wide"
-)
-
-# Autenticação Google Sheets
-@st.cache_resource
-def conectar_google_sheets():
-    try:
-        # Para deploy no Streamlit Cloud, use secrets
-        if 'gcp_service_account' in st.secrets:
-            creds_dict = st.secrets["gcp_service_account"]
-            creds = Credentials.from_service_account_info(creds_dict)
-        else:
-            # Para desenvolvimento local
-            with open('service_account.json') as f:
-                creds_dict = json.load(f)
-            creds = Credentials.from_service_account_info(creds_dict)
-        
-        client = gspread.authorize(creds)
-        return client
-    except Exception as e:
-        st.error(f"Erro na conexão: {e}")
-        return None
-
-# Inicializar worksheets
-def inicializar_worksheets(client):
     try:
         spreadsheet = client.open("Sistema_Estoque")
-    except gspread.SpreadsheetNotFound:
+    except import streamlit as st
+
+st.set_page_config(page_title="Teste SSL", page_icon="🔒")
+st.title("✅ Teste de Conexão Segura")
+st.success("Se você está vendo esta mensagem, o SSL está funcionando!")
+st.info("Agora você pode voltar para a aplicação completa."):
         # Criar nova planilha se não existir
         spreadsheet = client.create("Sistema_Estoque")
     
@@ -586,3 +555,4 @@ def consulta_estoque(df_produtos):
 
 if __name__ == "__main__":
     main()
+
