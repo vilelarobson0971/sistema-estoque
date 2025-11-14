@@ -17,18 +17,30 @@ st.set_page_config(
 def connect_to_gsheet():
     """Conecta ao Google Sheets usando credenciais"""
     try:
-        # As credenciais devem estar em secrets do Streamlit
-        scope = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
+        # Configuração idêntica ao script de agenda que funciona
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
         
-        creds_dict = st.secrets["gcp_service_account"]
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        # Verifica se as credenciais estão no formato JSON string ou dict
+        if "google_sheets" in st.secrets:
+            # Formato do script de agenda (recomendado)
+            creds_json = st.secrets["google_sheets"]["credentials"]
+            creds_dict = json.loads(creds_json)
+            sheet_id = st.secrets["google_sheets"]["sheet_id"]
+            use_sheet_id = True
+        else:
+            # Formato antigo (fallback)
+            creds_dict = st.secrets["gcp_service_account"]
+            use_sheet_id = False
+        
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(creds)
         
-        # Abrir a planilha (substitua pelo nome da sua planilha)
-        spreadsheet = client.open("Sistema_Estoque")
+        # Abrir a planilha por ID (mais seguro) ou nome
+        if use_sheet_id:
+            spreadsheet = client.open_by_key(sheet_id)
+        else:
+            spreadsheet = client.open("Sistema_Estoque")
+        
         return spreadsheet
     except Exception as e:
         st.error(f"Erro ao conectar ao Google Sheets: {e}")
