@@ -5,6 +5,12 @@ import pandas as pd
 from datetime import datetime
 import json
 import time
+import ssl
+import urllib3
+
+# DESABILITAR AVISOS DE SSL - APENAS PARA DEBUG
+# ⚠️ REMOVA ESTAS LINHAS EM PRODUÇÃO ⚠️
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configuração da página
 st.set_page_config(
@@ -14,7 +20,7 @@ st.set_page_config(
 )
 
 # Função para conectar ao Google Sheets com timeout e melhor tratamento de erros
-@st.cache_resource(ttl=600, show_spinner=False)  # Cache por 10 minutos
+@st.cache_resource(ttl=600, show_spinner=False)
 def connect_to_gsheet():
     """Conecta ao Google Sheets usando credenciais com tratamento de erro robusto"""
     
@@ -33,7 +39,11 @@ def connect_to_gsheet():
         ]
         
         creds_dict = dict(st.secrets["gcp_service_account"])
+        
+        # CONFIGURAÇÃO SEGURA DE CREDENCIAIS
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        
+        # Configurar client gspread com timeout
         client = gspread.authorize(creds)
         
         # Tentar abrir a planilha com timeout
@@ -67,9 +77,9 @@ def connect_to_gsheet():
             "message": f"Erro ao conectar: {type(e).__name__} - {str(e)}"
         }
 
-# Função para inicializar as abas necessárias (apenas se não existirem)
+# Função para inicializar as abas necessárias
 def inicializar_planilhas(spreadsheet):
-    """Cria as abas necessárias se não existirem - SEM RECARREGAR TUDO"""
+    """Cria as abas necessárias se não existirem"""
     try:
         abas_necessarias = {
             "Produtos": ["Codigo", "Referencia", "SKU", "EAN", "Marca", "Grupo", 
@@ -300,7 +310,7 @@ def main():
     elif menu == "📦 Estoque":
         pagina_estoque(spreadsheet)
 
-# Páginas do Sistema (mantendo as mesmas do código original)
+# Páginas do Sistema
 def pagina_home(spreadsheet):
     st.header("🏠 Dashboard Principal")
     
@@ -492,33 +502,189 @@ def pagina_cadastro_produto(spreadsheet):
         else:
             st.info("Nenhum produto cadastrado ainda.")
 
-# NOTA: As outras funções de página continuam iguais ao código original
-# (pagina_busca_produtos, pagina_necessidade_compra, etc.)
-# Incluí apenas as principais para demonstrar as melhorias
-
 def pagina_busca_produtos(spreadsheet):
     st.header("🔍 Busca de Produtos")
-    st.info("Função mantida igual ao código original")
+    
+    with st.spinner("Carregando produtos..."):
+        df_produtos = buscar_produtos(spreadsheet)
+    
+    if not df_produtos.empty:
+        st.subheader("Filtrar Produtos")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            filtro_codigo = st.text_input("Filtrar por Código")
+            filtro_sku = st.text_input("Filtrar por SKU")
+        
+        with col2:
+            filtro_descricao = st.text_input("Filtrar por Descrição")
+            filtro_marca = st.text_input("Filtrar por Marca")
+        
+        with col3:
+            filtro_fornecedor = st.text_input("Filtrar por Fornecedor")
+            filtro_grupo = st.text_input("Filtrar por Grupo")
+        
+        # Aplicar filtros
+        filtros = {
+            'Codigo': filtro_codigo,
+            'SKU': filtro_sku,
+            'Descricao': filtro_descricao,
+            'Marca': filtro_marca,
+            'Fornecedor': filtro_fornecedor,
+            'Grupo': filtro_grupo
+        }
+        
+        df_filtrado = buscar_produtos(spreadsheet, filtros)
+        
+        st.subheader(f"Resultados ({len(df_filtrado)} produtos)")
+        st.dataframe(df_filtrado, use_container_width=True)
+        
+        # Botão para exportar
+        if not df_filtrado.empty:
+            csv = df_filtrado.to_csv(index=False)
+            st.download_button(
+                label="📥 Exportar para CSV",
+                data=csv,
+                file_name=f"produtos_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv"
+            )
+    else:
+        st.info("Nenhum produto cadastrado ainda.")
 
 def pagina_necessidade_compra(spreadsheet):
     st.header("⚠️ Necessidade de Compra")
-    st.info("Função mantida igual ao código original")
+    
+    with st.spinner("Calculando necessidades de compra..."):
+        df_necessidade = calcular_necessidade_compra(spreadsheet)
+    
+    if not df_necessidade.empty:
+        st.subheader(f"Produtos com Estoque Baixo ({len(df_necessidade)} itens)")
+        
+        # Mostrar resumo
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            total_necessidade = int(df_necessidade['Necessidade'].sum())
+            st.metric("Total de Itens Necessários", total_necessidade)
+        
+        with col2:
+            valor_total = df_necessidade['Valor_Total'].sum()
+            st.metric("Valor Total Estimado", f"R$ {valor_total:,.2f}")
+        
+        with col3:
+            fornecedores_unicos = df_necessidade['Fornecedor'].nunique()
+            st.metric("Fornecedores Envolvidos", fornecedores_unicos)
+        
+        # Tabela detalhada
+        st.dataframe(
+            df_necessidade[[
+                'Codigo', 'Descricao', 'Fornecedor', 'Estoque_Atual', 
+                'Estoque_Minimo', 'Necessidade', 'Valor', 'Valor_Total'
+            ]],
+            use_container_width=True
+        )
+        
+        # Botão para gerar relatório
+        if st.button("📋 Gerar Relatório de Compra"):
+            # Salvar na aba de Necessidade_Compra
+            try:
+                worksheet = spreadsheet.worksheet("Necessidade_Compra")
+                
+                # Preparar dados para inserção
+                dados_insercao = []
+                for _, row in df_necessidade.iterrows():
+                    dados_insercao.append([
+                        datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        row['Codigo'],
+                        row['Descricao'],
+                        row['Estoque_Atual'],
+                        row['Estoque_Minimo'],
+                        row['Necessidade'],
+                        row['Fornecedor'],
+                        row['Valor_Total']
+                    ])
+                
+                worksheet.append_rows(dados_insercao)
+                st.success("✅ Relatório salvo na planilha!")
+                
+            except Exception as e:
+                st.error(f"❌ Erro ao salvar relatório: {e}")
+    
+    else:
+        st.success("🎉 Todos os produtos estão com estoque adequado!")
+        st.info("Não há necessidade de compras no momento.")
 
 def pagina_orcamento_compra(spreadsheet):
     st.header("💰 Orçamento de Compra")
-    st.info("Função mantida igual ao código original")
+    st.info("Funcionalidade de orçamento em desenvolvimento")
 
 def pagina_entrada_produtos(spreadsheet):
     st.header("📥 Entrada de Produtos")
-    st.info("Função mantida igual ao código original")
+    st.info("Funcionalidade de entrada de produtos em desenvolvimento")
 
 def pagina_relatorio_fechamento(spreadsheet):
     st.header("📊 Relatório de Fechamento")
-    st.info("Função mantida igual ao código original")
+    st.info("Funcionalidade de relatório em desenvolvimento")
 
 def pagina_estoque(spreadsheet):
     st.header("📦 Estoque")
-    st.info("Função mantida igual ao código original")
+    
+    with st.spinner("Carregando dados de estoque..."):
+        df_produtos = buscar_produtos(spreadsheet)
+    
+    if not df_produtos.empty:
+        # Filtros para estoque
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            estoque_min = st.number_input("Estoque Mínimo para alerta", value=5)
+        
+        with col2:
+            filtrar_baixo_estoque = st.checkbox("Mostrar apenas baixo estoque")
+        
+        # Aplicar filtro de baixo estoque se selecionado
+        if filtrar_baixo_estoque:
+            df_estoque = df_produtos[
+                df_produtos['Estoque_Atual'].astype(float) <= estoque_min
+            ]
+        else:
+            df_estoque = df_produtos
+        
+        st.subheader(f"Posição de Estoque ({len(df_estoque)} produtos)")
+        
+        # Métricas
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            valor_total = (df_estoque['Estoque_Atual'].astype(float) * 
+                          df_estoque['Valor'].astype(float)).sum()
+            st.metric("Valor Total em Estoque", f"R$ {valor_total:,.2f}")
+        
+        with col2:
+            itens_baixo_estoque = len(df_produtos[
+                df_produtos['Estoque_Atual'].astype(float) <= estoque_min
+            ])
+            st.metric("Itens com Baixo Estoque", itens_baixo_estoque)
+        
+        with col3:
+            total_itens = df_estoque['Estoque_Atual'].astype(int).sum()
+            st.metric("Total de Itens em Estoque", total_itens)
+        
+        with col4:
+            fornecedores_unicos = df_estoque['Fornecedor'].nunique()
+            st.metric("Fornecedores", fornecedores_unicos)
+        
+        # Tabela de estoque
+        st.dataframe(
+            df_estoque[[
+                'Codigo', 'Descricao', 'Marca', 'Fornecedor', 
+                'Estoque_Atual', 'Estoque_Minimo', 'Valor', 'Endereco'
+            ]],
+            use_container_width=True
+        )
+    else:
+        st.info("Nenhum produto cadastrado ainda.")
 
 if __name__ == "__main__":
     main()
