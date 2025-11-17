@@ -413,8 +413,9 @@ elif menu == "Relatório de Fechamento":
 st.sidebar.markdown("---")
 st.sidebar.info(
     "Idealizado por João Henrique\n\n"
-    "Dev. Robson Vilela"
+    "Dev. Robson Vilela\n\n"
     "Versão 1.0 - 2025"
 )
+
 
 
