@@ -69,7 +69,7 @@ def formatar_moeda(valor):
 
 # Sidebar para navegação
 st.sidebar.title("📦 Sistema de Compras e Estoque")
-st.sidebar.write("**Criação: João Henrique**")
+st.sidebar.write("**Infralink - Shopping Catuaí Londrina**")
 
 menu = st.sidebar.selectbox(
     "Menu Principal",
@@ -412,6 +412,8 @@ elif menu == "Relatório de Fechamento":
 # Rodapé
 st.sidebar.markdown("---")
 st.sidebar.info(
-    "Sistema desenvolvido por João Henrique\n\n"
-    "Versão 1.0 - 2024"
+    "Idealizado por João Henrique\n\n"
+    "Desenvolvedor Robson Vilela"
+    "Versão 1.0 - 2025"
 )
+
